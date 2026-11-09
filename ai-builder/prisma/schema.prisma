@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String          @id @default(cuid())
+  email            String          @unique
+  passwordHash     String?
+  name             String?
+  plan             String          @default("free")
+  stripeCustomerId String?         @unique
+  githubToken      String? // encrypted
+  projects         Project[]
+  memberships      ProjectMember[]
+  usage            UsageEvent[]
+  createdAt        DateTime        @default(now())
+}
+
+model Project {
+  id               String          @id @default(cuid())
+  name             String
+  framework        String
+  slug             String          @unique
+  summary          String?
+  liveDeploymentId String?
+  ownerId          String
+  owner            User            @relation(fields: [ownerId], references: [id])
+  files            ProjectFile[]
+  versions         Version[]
+  members          ProjectMember[]
+  deployments      Deployment[]
+  domains          Domain[]
+  envVars          EnvVar[]
+  releases         Release[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model ProjectFile {
+  id        String  @id @default(cuid())
+  projectId String
+  path      String
+  content   String
+  project   Project @relation(fields: [projectId], references: [id])
+
+  @@unique([projectId, path])
+}
+
+model Version {
+  id        String   @id @default(cuid())
+  projectId String
+  message   String
+  snapshot  Json
+  project   Project  @relation(fields: [projectId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+// Project sharing / team collaboration
+model ProjectMember {
+  id        String  @id @default(cuid())
+  projectId String
+  userId    String
+  role      String // "viewer" | "editor"
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// Web deployment (built in an isolated Docker container, served from S3)
+model Deployment {
+  id         String    @id @default(cuid())
+  projectId  String
+  status     String // queued | building | uploading | live | failed
+  logs       String    @default("")
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Domain {
+  id          String  @id @default(cuid())
+  projectId   String
+  hostname    String  @unique
+  verifyToken String
+  verified    Boolean @default(false)
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Encrypted environment variables (AES-256-GCM)
+model EnvVar {
+  id        String  @id @default(cuid())
+  projectId String
+  name      String
+  valueEnc  String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, name])
+}
+
+// Mobile builds / Expo Go updates through EAS
+model Release {
+  id        String   @id @default(cuid())
+  projectId String
+  platform  String // android | ios | all
+  kind      String // build | update
+  status    String // queued | running | submitted | failed
+  url       String?
+  logs      String   @default("")
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// Usage limits + analytics
+model UsageEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String // ai | deploy | sandbox | build | update
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+}
+
+// Audit log of AI and platform actions
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  projectId String?
+  action    String
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
+}

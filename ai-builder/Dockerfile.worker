@@ -1,0 +1,9 @@
+# Worker image: runs jobs and needs the Docker CLI + access to a Docker daemon (socket) to start sandboxes
+FROM node:20-alpine
+RUN apk add --no-cache docker-cli
+WORKDIR /app
+COPY package*.json ./
+COPY prisma ./prisma
+RUN npm ci
+COPY . .
+CMD ["npm", "run", "worker"]
